@@ -1,70 +1,90 @@
-# Getting Started with Create React App
+# AspectLens: Aspect-Based Product Review Sentiment
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Normal e-commerce reviews are a single blob of text. AspectLens lets shoppers write one ordinary review,
+then **splits it into the product parts it talks about, scores each part, and pins the result onto the
+product photo**.
 
-## Available Scripts
+> *"The shoe leather quality is very good but lace quality is not so good"*
+> → **Leather** ★4.3 positive · **Laces** ★2.3 negative
 
-In the project directory, you can run:
+Each marked part of the product shows a coloured dot (green / amber / red / grey = no reviews yet).
+Hovering over a dot opens a panel with that part's average stars, a positive/neutral/negative split, and every
+review snippet about that part.
 
-### `npm start`
+## Two kinds of account
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+| Shopper | Seller |
+|---|---|
+| Browse and search products | List products (photo, details, price) |
+| Hover over the dots to read reviews part by part | Click on the photo to drop a dot on each part and name it |
+| Write, preview, edit or delete one review per product | Add synonyms per part ("grip, tread" for *Sole*) |
+| | Test a sample review against their parts |
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+Because the sellers define the parts, the system works for **any** product, not just the demo ones.
+Changing a product's parts re-analyses all of its existing reviews.
 
-### `npm test`
+## How the analysis works (`server/app/nlp/`)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+1. **Split** the review into sentences → contrast segments (*but, however, although…*) → fragments (*and*, commas).
+2. **Match** fragments to the seller's parts:
+   - *keywords*: the part name or a seller synonym, with plurals and compound words ("shoelaces" → *Lace*);
+   - *semantic*: `all-MiniLM-L6-v2` embeddings catch synonyms nobody typed ("traction" → *Sole*, "photos" → *Camera*).
+3. **Assemble clauses**:
+   - "The camera **and** display are fantastic" rates both parts.
+   - "sturdy, durable **and** comfortable" stays with the sole.
+   - "**They** snapped after a week" goes to the part mentioned just before.
+4. **Score** each clause with `nlptown/bert-base-multilingual-uncased-sentiment`, using the *expected* star value
+   (1.0–5.0) rather than the top label. ≥ 3.3 counts as positive and ≤ 2.7 as negative; these cut-offs were
+   tuned on a hand-labelled set.
 
-### `npm run build`
+## Run it
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Prerequisites (already installed on this machine under `~/.local`): Node 22+, MongoDB 8, and [uv](https://docs.astral.sh/uv/) (Python 3.12).
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+./scripts/dev.sh                          # MongoDB + API (:5050) + web app (:5173)
+cd server && uv run python seed.py --reset   # optional: demo products and reviews
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Open **http://localhost:5173**. Every demo account uses the password `password123`:
 
-### `npm run eject`
+| Account | Role |
+|---|---|
+| `shopper@demo.com` | shopper with no reviews yet (try writing one) |
+| `seller@demo.com` | seller of the sneaker and the phone |
+| `audio@demo.com` | seller of the headphones |
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+The first run downloads about 800 MB of models. Set `NLP_MODE=lite` in `server/.env` for a no-download,
+keyword-only mode (useful on low-RAM machines).
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Tests
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+```bash
+cd server
+uv run pytest -m "not slow"   # 28 fast tests: splitting rules + full API (needs MongoDB running)
+uv run pytest                 # + 8 tests against the real models
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Layout
 
-## Learn More
+```
+server/            Flask API (Python 3.12, uv)
+  app/auth.py      register/login, JWT, consumer/provider roles
+  app/products.py  products, image upload, part (aspect) editing
+  app/reviews.py   reviews, preview, edit/delete
+  app/service.py   analysis + per-part aggregation
+  app/nlp/         splitting, matching, sentiment
+  seed.py          demo data;  seed_assets/  demo illustrations
+client/            React 19 + Vite + React Router
+  src/pages/       Catalog, ProductPage, Login/Register, seller Dashboard, ProductForm, PartEditor
+  src/components/  HotspotViewer, AspectPanel, ReviewComposer, ReviewList…
+scripts/           dev.sh, start-mongo.sh, stop-mongo.sh
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Known limitations
 
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- Sentiment comes from a general review model, so slang can be misread ("the bass is *punchy*" scores slightly
+  negative) and sarcasm is not detected.
+- Semantic matching needs a similarity of at least 0.5. Near-misses such as "grip" → *Sole* need a seller keyword.
+- Reviews are analysed synchronously. Re-analysing after a part change is fine for hundreds of reviews, but a
+  background job queue would be needed for very large catalogues.
